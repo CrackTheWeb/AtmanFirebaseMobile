@@ -541,12 +541,12 @@ app.get('/get-next-question', async (req, res) => {
 app.post('/create-post', upload.single('image'), async (req, res) => {
   try {
     const { title, description } = req.body;
-    const { buffer } = req.file;
+    // const { buffer } = req.file;
 
     // Upload the image to Firebase Storage
     const imageFilename = `${uuidv4()}.jpg`;
     const storageRef = admin.storage().bucket().file(imageFilename);
-    await storageRef.save(buffer, { contentType: 'image/jpeg' });
+    // await storageRef.save(buffer, { contentType: 'image/jpeg' });
 
     // Get the URL of the uploaded image
     const imageUrl =  `https://firebasestorage.googleapis.com/v0/b/${storageRef.bucket.name}/o/${encodeURIComponent(
@@ -561,26 +561,14 @@ app.post('/create-post', upload.single('image'), async (req, res) => {
       description,
       imageUrl,
       date: currentDate,
-      approved: 0
+      approved: false // Change to false to indicate it's pending approval
     };
 
-    // Reference to the "posts" document in the "users" collection
-    const postsDocRef = admin.firestore().collection('users').doc('posts');
+    // Reference to the "pending" subcollection under the "posts" document in the "users" collection
+    const pendingPostsCollectionRef = admin.firestore().collection('users').doc('posts').collection('pending');
 
-    // Retrieve the current posts data
-    const postsDoc = await postsDocRef.get();
-
-    if (postsDoc.exists) {
-      // If the "posts" document already exists, update it with the new post
-      await postsDocRef.update({
-        posts: admin.firestore.FieldValue.arrayUnion(post)
-      });
-    } else {
-      // If the "posts" document does not exist, create it with the new post
-      await postsDocRef.set({
-        posts: [post]
-      });
-    }
+    // Add the new post document to the "pending" subcollection
+    await pendingPostsCollectionRef.add(post);
 
     res.json({ message: 'Post created successfully' });
   } catch (error) {
@@ -597,7 +585,6 @@ app.get('/get-unapproved-posts', async (req, res) => {
     // Extract post data from snapshot
     const unapprovedPosts = postsSnapshot.docs.map(doc => doc.data());
 
-    console.log('All unapproved posts:', unapprovedPosts); // Log for debugging
 
     res.json({ unapprovedPosts });
   } catch (error) {
@@ -1542,6 +1529,138 @@ app.get("/api/record/:uid", async (req, res) => {
     res.status(500).json({ success: false, error: 'Internal server error' });
   }
 });
+
+app.post('/admin/postsStatus', async (req, res) => {
+  try {
+    // Reference to the "pending" subcollection
+    const pendingPostsCollectionRef = admin.firestore().collection('users').doc('posts').collection('pending');
+
+    // Retrieve all documents from the "pending" subcollection
+    const pendingPostsSnapshot = await pendingPostsCollectionRef.get();
+
+    // Array to hold post data with their document IDs
+    const posts = [];
+
+    // Process each document snapshot in the snapshot
+    pendingPostsSnapshot.forEach(pendingPostDoc => {
+      // Get the document data along with the document ID
+      const postData = pendingPostDoc.data();
+      
+      // Add the document ID to the document data
+      postData.docId = pendingPostDoc.id;
+
+      // Add the document data to the array
+      posts.push(postData);
+    });
+
+    res.status(200).json({ success: true, pendingPosts:posts });
+    // res.status(200).json({ success: true, pendingPosts });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ success: false, error: 'Internal server error' });
+  }
+});
+
+
+app.post('/admin/approvepost', async (req, res) => {
+  try {
+    const { postId } = req.body;
+
+    // Get the reference to the Firestore collections
+    const pendingPostsCollectionRef = admin.firestore().collection('users').doc('posts').collection('pending');
+    const approvedPostsCollectionRef = admin.firestore().collection('approvedPosts');
+
+    // Retrieve the pending post
+    const pendingPostDoc = await pendingPostsCollectionRef.doc(postId).get();
+
+    // Check if the pending post exists
+    if (pendingPostDoc.exists) {
+      const pendingPostData = pendingPostDoc.data();
+
+      // Add the pending post to the approved collection
+      await approvedPostsCollectionRef.doc(postId).set({
+        postId,
+        ...pendingPostData,
+      });
+
+      // Delete the pending post
+      await pendingPostDoc.ref.delete();
+
+      res.status(200).json({ success: true, postId, message: 'Post approved and moved to the approved collection' });
+    } else {
+      res.status(404).json({ success: false, message: 'Pending post not found' });
+    }
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ success: false, error: 'Internal server error' });
+  }
+});
+app.post('/admin/deletePost', async (req, res) => {
+  try {
+    const { postId } = req.body;
+
+    // Get the reference to the Firestore collection
+    const pendingPostsCollectionRef = admin.firestore().collection('users').doc('posts').collection('pending');
+
+    // Retrieve the pending post
+    const pendingPostDoc = await pendingPostsCollectionRef.doc(postId).get();
+
+    // Check if the pending post exists
+    if (pendingPostDoc.exists) {
+      const pendingPostData = pendingPostDoc.data();
+
+      // Check if the post is not approved
+      if (!pendingPostData.approved) {
+        // Delete the pending post
+        await pendingPostDoc.ref.delete();
+
+
+        res.status(200).json({ success: true, postId, message: 'Pending post deleted as it was not approved' });
+      } else {
+        res.status(400).json({ success: false, message: 'Pending post is already approved' });
+      }
+    } else {
+      res.status(404).json({ success: false, message: 'Pending post not found' });
+    }
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ success: false, error: 'Internal server error' });
+  }
+});
+
+app.post('/admin/users', async (req, res) => {
+  try {
+    const userDetailsCollectionRef = admin.firestore().collection('users').doc('userDetails').collection('details'); // Change to your collection name and path
+    const userDetailsSnapshot = await userDetailsCollectionRef.get();
+    const userDetails = [];
+    userDetailsSnapshot.forEach(doc => {
+      userDetails.push(doc.data());
+    });
+  
+    res.status(200).json({ success: true, users:userDetails });
+  } catch (error) {
+    console.error('Error fetching user details:', error);
+    res.status(500).json({ success: false, error: 'Internal server error' });
+  }
+});
+app.post('/admin/doctors', async (req, res) => {
+  try {
+    const userDetailsCollectionRef = admin.firestore().collection('psychologists'); // Change to your collection name and path
+    const userDetailsSnapshot = await userDetailsCollectionRef.get();
+    const userDetails = [];
+    userDetailsSnapshot.forEach(doc => {
+      userDetails.push(doc.data());
+    });
+  
+    res.status(200).json({ success: true, users:userDetails });
+  } catch (error) {
+    console.error('Error fetching user details:', error);
+    res.status(500).json({ success: false, error: 'Internal server error' });
+  }
+});
+
+
+
 
 
 
