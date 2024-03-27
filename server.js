@@ -3,7 +3,7 @@ const express = require('express');
 const app = express();
 const admin = require('firebase-admin');
 const jwt = require('jsonwebtoken');
-const bcrypt=require("bcrypt")
+const bcrypt = require("bcrypt")
 const nodemailer = require('nodemailer');
 const { v4: uuidv4 } = require('uuid');
 const multer = require('multer');
@@ -11,7 +11,7 @@ const upload = multer();
 
 // const port = process.env.PORT || 3001;
 const port = 3001;
-const cors = require('cors'); 
+const cors = require('cors');
 app.use(cors());
 //const authenticateUser = require('./authenticateUser'); // Reference to the authentication middleware
 
@@ -36,7 +36,7 @@ async function authenticateUser(req, res, next) {
   try {
     // Verify the JWT token against Firebase Authentication
     const decodedToken = await admin.auth().verifyIdToken(token);
-    
+
     // Add the user UID to the request object for further processing
     req.userUid = decodedToken.uid;
 
@@ -55,88 +55,88 @@ async function isNicknameTaken(nickname) {
 
 app.post('/registerUser', async (req, res) => {
   try {
-      const { email, password } = req.body;
+    const { email, password } = req.body;
 
-      // Check if user exists
-      let existingUserRecord;
-      try {
-          existingUserRecord = await admin.auth().getUserByEmail(email);
-      } catch (error) {
-          // If no user record found, proceed with registration
-          if (error.code !== 'auth/user-not-found') {
-              throw error; // Rethrow other errors
-          }
+    // Check if user exists
+    let existingUserRecord;
+    try {
+      existingUserRecord = await admin.auth().getUserByEmail(email);
+    } catch (error) {
+      // If no user record found, proceed with registration
+      if (error.code !== 'auth/user-not-found') {
+        throw error; // Rethrow other errors
       }
+    }
 
-      if (existingUserRecord) {
-          // User already exists
-          const userData = existingUserRecord.toJSON();
-          if (!userData || !userData.nickname) {
-              // User doesn't have a nickname, update details and re-register
-              await updateUserAndReRegister(existingUserRecord.uid, email, password);
-              return res.json({ message: 'User details updated and re-registered successfully', uid: existingUserRecord.uid });
-          } else {
-              // User already registered with a nickname
-              return res.status(400).json({ message: 'you are already registered  try with other email', error: 'User already registered with a nickname' });
-          }
+    if (existingUserRecord) {
+      // User already exists
+      const userData = existingUserRecord.toJSON();
+      if (!userData || !userData.nickname) {
+        // User doesn't have a nickname, update details and re-register
+        await updateUserAndReRegister(existingUserRecord.uid, email, password);
+        return res.json({ message: 'User details updated and re-registered successfully', uid: existingUserRecord.uid });
       } else {
-          // User doesn't exist, create a new user
-          const userRecord = await admin.auth().createUser({
-              email,
-              password: await bcrypt.hash(password, 15)
-          });
-
-          // Store user details in Firestore
-          await admin.firestore().collection('users').doc("userDetails").collection("details").doc(userRecord.uid).set({
-              email,
-              password: userRecord.passwordHash
-          });
-
-          // Respond with a success message and user UID
-          return res.json({ message: 'Registration successful', uid: userRecord.uid });
+        // User already registered with a nickname
+        return res.status(400).json({ message: 'you are already registered  try with other email', error: 'User already registered with a nickname' });
       }
+    } else {
+      // User doesn't exist, create a new user
+      const userRecord = await admin.auth().createUser({
+        email,
+        password: await bcrypt.hash(password, 15)
+      });
+
+      // Store user details in Firestore
+      await admin.firestore().collection('users').doc("userDetails").collection("details").doc(userRecord.uid).set({
+        email,
+        password: userRecord.passwordHash
+      });
+
+      // Respond with a success message and user UID
+      return res.json({ message: 'Registration successful', uid: userRecord.uid });
+    }
   } catch (error) {
-      console.error('Error in registration:', error);
-      return res.status(500).json({ message: 'Internal Server Error', error: error.message });
+    console.error('Error in registration:', error);
+    return res.status(500).json({ message: 'Internal Server Error', error: error.message });
   }
 });
 
 async function updateUserAndReRegister(uid, email, password) {
   try {
-      // Check if user already has a nickname
-      const userDoc = await admin.firestore().collection('users').doc("userDetails").collection("details").doc(uid).get();
-      if (userDoc.exists) {
-          const userData = userDoc.data();
-          if (userData && userData.nickname) {
-              // User already registered with a nickname, throw error
-              throw new Error('User already registered with a nickname');
-          }
+    // Check if user already has a nickname
+    const userDoc = await admin.firestore().collection('users').doc("userDetails").collection("details").doc(uid).get();
+    if (userDoc.exists) {
+      const userData = userDoc.data();
+      if (userData && userData.nickname) {
+        // User already registered with a nickname, throw error
+        throw new Error('User already registered with a nickname');
       }
+    }
 
-      // Delete existing user document
-      await admin.firestore().collection('users').doc("userDetails").collection("details").doc(uid).delete();
+    // Delete existing user document
+    await admin.firestore().collection('users').doc("userDetails").collection("details").doc(uid).delete();
 
-      // Re-register the user with the same UID
-      const hashedPassword = await bcrypt.hash(password, 15);
-      await admin.auth().updateUser(uid, {
-          password: hashedPassword
-      });
+    // Re-register the user with the same UID
+    const hashedPassword = await bcrypt.hash(password, 15);
+    await admin.auth().updateUser(uid, {
+      password: hashedPassword
+    });
 
-      // Update user details in Firestore
-      await admin.firestore().collection('users').doc("userDetails").collection("details").doc(uid).set({
-          email,
-          password: hashedPassword
-      });
+    // Update user details in Firestore
+    await admin.firestore().collection('users').doc("userDetails").collection("details").doc(uid).set({
+      email,
+      password: hashedPassword
+    });
 
-      // Return success message
-      return { message: 'User details updated and re-registered successfully', uid };
+    // Return success message
+    return { message: 'User details updated and re-registered successfully', uid };
   } catch (error) {
-      // Handle specific error case: User already registered with a nickname
-      if (error.message === 'User already registered with a nickname') {
-          throw error;
-      }
-      // Handle other errors
-      throw new Error('Error updating user details and re-registering');
+    // Handle specific error case: User already registered with a nickname
+    if (error.message === 'User already registered with a nickname') {
+      throw error;
+    }
+    // Handle other errors
+    throw new Error('Error updating user details and re-registering');
   }
 }
 
@@ -145,8 +145,8 @@ async function updateUserAndReRegister(uid, email, password) {
 
 
 
-    
-    
+
+
 //     // User already exists
 //     // Check if user has a nickname
 //     const userDoc = await admin.firestore().collection('users').doc("userDetails").collection("details").doc(existingUserRecord.uid).get();
@@ -187,7 +187,7 @@ async function updateUserAndReRegister(uid, email, password) {
 //       // Respond with a success message and user UID
 //       return res.json({ message: 'Registration successful', uid: userRecord.uid });
 //     }
-    
+
 //   } catch (error) {
 //     console.error('Error in registration:', error);
 //     res.status(500).json({ message: 'Internal Server Error' });
@@ -212,7 +212,7 @@ app.post('/userdetails', async (req, res) => {
       { merge: true } // This option ensures that existing data is not overwritten
     );
 
-    res.json({ message: 'User details saved successfully', uid:uid });
+    res.json({ message: 'User details saved successfully', uid: uid });
   } catch (error) {
     console.error('Error in user details registration step:', error);
     res.status(500).json({ message: 'Internal Server Error' });
@@ -240,6 +240,10 @@ app.post('/registerUserNickname', async (req, res) => {
     res.status(500).json({ message: 'Internal Server Error' });
   }
 });
+
+function registerUserNickname(req){
+  
+}
 
 
 // login route
@@ -287,16 +291,16 @@ app.post('/UserLogin', async (req, res) => {
           res.status(401).json({ message: 'Invalid email or password' });
         }
       } else {
-        res.status(404).json({ message: 'User not found in Firestore' });
+        res.json({ message: 'User not found ' });
       }
     } else {
-      res.status(404).json({ message: 'User not found' });
+      res.json({ message: 'User not found' });
     }
   } catch (error) {
     console.error('Error during login:', error);
 
     // Handle specific authentication errors
-    if (error.code === 'auth/user-not-found' || error.code === 'auth/wrong-password') {
+    if (error.code === 'auth/user-not-found' || error.code === 'auth/wrong-password' || error.code === 'auth/invalid-email') {
       res.status(401).json({ message: 'Invalid email or password' });
     } else {
       res.status(500).json({ message: 'Internal Server Error' });
@@ -440,40 +444,33 @@ async function getCurrentQuestionCount() {
 
 
 
-// app.get('/get-next-question', async (req, res) => {
-//   try {
-//     // Get the reference to the document containing the last fetched question index
-//     const indexDocRef = admin.firestore().collection('users').doc('dailyjournal').collection('lastFetchedQuestionIndex');
-    
-//     // Get the current index data
-//     const indexDoc = await indexDocRef.get();
-//     let lastFetchedQuestionIndex = indexDoc.exists ? indexDoc.data().index : 0;
+app.get('/get-next-question', async (req, res) => {
+  try {
+    // Get the reference to the document containing the questions array
+    const docRef = admin.firestore().collection('users').doc('dailyjournal');
 
-//     // Query the next question
-//     let query = admin.firestore().collection('users').doc('dailyjournal').collection('questions').doc(lastFetchedQuestionIndex.toString());
+    // Get the document data
+    const doc = await docRef.get();
+    const questionsArray = doc.data().questions;
 
-//     // Get the next question
-//     const questionDoc = await query.get();
+    // Check if there are any questions
+    if (!questionsArray || questionsArray.length === 0) {
+      return res.status(404).json({ message: 'No questions found' });
+    }
 
-//     if (questionDoc.exists) {
-//       const nextQuestion = questionDoc.data().question;
-      
-//       // Increment the index for the next question
-//       lastFetchedQuestionIndex++;
+    // Get a random question index
+    const randomIndex = Math.floor(Math.random() * questionsArray.length);
+    const randomQuestion = questionsArray[randomIndex];
 
-//       // Update the last fetched question index in Firestore
-//       await indexDocRef.set({ index: lastFetchedQuestionIndex });
+    // Respond with the random question
+    res.json({ question: randomQuestion });
+  } catch (error) {
+    console.error('Error in get-next-question route:', error);
+    res.status(500).json({ message: 'Internal Server Error' });
+  }
+});
 
-//       res.json({ question: nextQuestion });
-//     } else {
-//       res.status(404).json({ message: 'No questions found' });
-//     }
-//   } catch (error) {
-//     console.error('Error in get-next-question route:', error);
-//     res.status(500).json({ message: 'Internal Server Error' });
-//   }
-// });
-// Initialize with 0
+
 app.post('/store-question', async (req, res) => {
   try {
     const { question } = req.body;
@@ -502,54 +499,54 @@ app.post('/store-question', async (req, res) => {
     res.status(500).json({ message: 'Internal Server Error' });
   }
 });
-app.get('/get-next-question', async (req, res) => {
-  try {
-    // Get the reference to the dailyjournal document
-    const dailyJournalRef = admin.firestore().collection('users').doc('dailyjournal');
+// app.get('/get-next-question', async (req, res) => {
+//   try {
+//     // Get the reference to the dailyjournal document
+//     const dailyJournalRef = admin.firestore().collection('users').doc('dailyjournal');
 
-    // Get the current data of the dailyjournal document
-    const dailyJournalDoc = await dailyJournalRef.get();
-    const dailyJournalData = dailyJournalDoc.exists ? dailyJournalDoc.data() : { questions: [] };
+//     // Get the current data of the dailyjournal document
+//     const dailyJournalDoc = await dailyJournalRef.get();
+//     const dailyJournalData = dailyJournalDoc.exists ? dailyJournalDoc.data() : { questions: [] };
 
-    // Check if there are questions available
-    if (dailyJournalData.questions.length > 0) {
-      // Get the index of the next question
-      let nextQuestionIndex = dailyJournalData.nextQuestionIndex || 0;
+//     // Check if there are questions available
+//     if (dailyJournalData.questions.length > 0) {
+//       // Get the index of the next question
+//       let nextQuestionIndex = dailyJournalData.nextQuestionIndex || 0;
 
-      // Get the next question from the questions array
-      const nextQuestion = dailyJournalData.questions[nextQuestionIndex].question;
+//       // Get the next question from the questions array
+//       const nextQuestion = dailyJournalData.questions[nextQuestionIndex].question;
 
-      // Increment the index for the next question
-      nextQuestionIndex = (nextQuestionIndex + 1) % dailyJournalData.questions.length;
+//       // Increment the index for the next question
+//       nextQuestionIndex = (nextQuestionIndex + 1) % dailyJournalData.questions.length;
 
-      // Update the next question index in the document
-      await dailyJournalRef.update({ nextQuestionIndex });
+//       // Update the next question index in the document
+//       await dailyJournalRef.update({ nextQuestionIndex });
 
-      res.json({ question: nextQuestion });
-    } else {
-      res.status(404).json({ message: 'No questions found' });
-    }
-  } catch (error) {
-    console.error('Error in get-next-question route:', error);
-    res.status(500).json({ message: 'Internal Server Error' });
-  }
-});
+//       res.json({ question: nextQuestion });
+//     } else {
+//       res.status(404).json({ message: 'No questions found' });
+//     }
+//   } catch (error) {
+//     console.error('Error in get-next-question route:', error);
+//     res.status(500).json({ message: 'Internal Server Error' });
+//   }
+// });
 
 
 
 
 app.post('/create-post', upload.single('image'), async (req, res) => {
   try {
-    const { title, description } = req.body;
-    // const { buffer } = req.file;
+    const { title, description, uid } = req.body;
+    const { buffer } = req.file;
 
     // Upload the image to Firebase Storage
     const imageFilename = `${uuidv4()}.jpg`;
     const storageRef = admin.storage().bucket().file(imageFilename);
-    // await storageRef.save(buffer, { contentType: 'image/jpeg' });
+    await storageRef.save(buffer, { contentType: 'image/jpeg' });
 
     // Get the URL of the uploaded image
-    const imageUrl =  `https://firebasestorage.googleapis.com/v0/b/${storageRef.bucket.name}/o/${encodeURIComponent(
+    const imageUrl = `https://firebasestorage.googleapis.com/v0/b/${storageRef.bucket.name}/o/${encodeURIComponent(
       imageFilename
     )}?alt=media`;
     // Get the current date
@@ -557,11 +554,12 @@ app.post('/create-post', upload.single('image'), async (req, res) => {
 
     // Create a new post object
     const post = {
+      uid,
       title,
       description,
       imageUrl,
       date: currentDate,
-      approved: false // Change to false to indicate it's pending approval
+      likesCount:0
     };
 
     // Reference to the "pending" subcollection under the "posts" document in the "users" collection
@@ -614,6 +612,107 @@ app.get('/get-posts', async (req, res) => {
     res.status(500).json({ message: 'Internal Server Error' });
   }
 });
+app.get('/get-newsfeed', async (req, res) => {
+  try {
+    // Reference to the "approvedPosts" collection
+    const postsCollectionRef = admin.firestore().collection('approvedPosts');
+
+    // Retrieve the current posts data
+    const postsQuerySnapshot = await postsCollectionRef.get();
+
+    if (!postsQuerySnapshot.empty) {
+      const postsData = [];
+      postsQuerySnapshot.forEach(doc => {
+        postsData.push(doc.data());
+      });
+
+      // Sort posts by date in descending order
+      const sortedPosts = postsData.sort((a, b) => b.date.toDate() - a.date.toDate());
+      res.json({ posts: sortedPosts });
+    } else {
+      res.status(404).json({ message: 'No posts found' });
+    }
+  } catch (error) {
+    console.error('Error in get-posts route:', error);
+    res.status(500).json({ message: 'Internal Server Error' });
+  }
+});
+
+
+
+
+app.use(express.json());
+app.post('/like-post', async (req, res) => {
+
+  const postId = req.query.postId;
+  const uid = req.query.uid;
+  await admin.firestore().runTransaction(async transaction => {
+    const postRef = admin.firestore().collection('approvedPosts').doc(postId);
+    const doc = await transaction.get(postRef);
+
+    if (doc && doc.data && typeof doc.data === 'function') {
+      const likesCount = doc.data()?.likesCount || 0;
+      // Use likesCount here...
+      ;
+
+      const postSnapshot = await postRef.get();
+      const postData = postSnapshot.data();
+
+      // Check if the user already liked the post
+      if (postData && postData.likedBy && postData.likedBy.likes && postData.likedBy.likes[uid]) {
+        console.log('User already liked this post');
+        // Send an error response
+        return res.status(200).json({ message: 'User already liked this post' });
+      }else{
+        try {
+          // If the user hasn't liked the post yet, update the document
+          await transaction.update(postRef, {
+            [`likedBy.likes.${uid}`]: true,
+            likesCount: likesCount + 1 // Increment the like count
+          });
+  
+  
+          // Send a success response
+          return res.json({ message: 'Post liked successfully' });
+        } catch (error) {
+          console.log('Error liking post:', error);
+          // Send an error response
+          return res.status(500).json({ error: 'Internal Server Error' });
+        }
+      }
+
+     
+    } else {
+      console.error('Invalid document or missing data.');
+      // Handle the case where doc is undefined or doesn't have a data() method
+    }
+
+  });
+});
+app.post('/dislike-post', async (req, res) => {
+  try {
+    const postId = req.query.postId;
+    const uid = req.query.uid;
+
+      // Update the like status for the user in the post document
+      await admin.firestore().runTransaction(async transaction => {
+          const postRef = admin.firestore().collection('approvedPosts').doc(postId);
+          const doc = await transaction.get(postRef);
+          const likesCount = doc.data().likesCount || 0;
+
+          // Remove the like for the user from the post document
+          await transaction.update(postRef, {
+              [`likedBy.likes.${uid}`]: admin.firestore.FieldValue.delete(),
+              likesCount: Math.max(likesCount - 1, 0) // Decrement the like count
+          });
+      });
+
+      res.json({ message: 'Post disliked successfully' });
+  } catch (error) {
+      console.error('Error disliking post:', error);
+      res.status(500).json({ error: 'Internal Server Error' });
+  }
+});
 
 // Function to check if a goal exists for the current date
 const doesGoalExistForDate = async (uid, subcollection, currentDate) => {
@@ -658,7 +757,7 @@ app.post('/create-work-goal', async (req, res) => {
 
     // Create a reference to the document based on user's UID and the formatted date
     const workGoalRef = admin.firestore().collection('users').doc('userDetails').collection('details').doc(uid)
-                            .collection('workGoal').doc(formattedDate);
+      .collection('workGoal').doc(formattedDate);
 
     // Set the work goal document with the provided work goal and current date
     await workGoalRef.set({
@@ -798,7 +897,7 @@ app.post('/add-rating', async (req, res) => {
 
     // Create a reference to the document based on user's UID and the specified technique ID
     const ratingRef = admin.firestore().collection('users').doc('userDetails').collection('details').doc(uid)
-                            .collection('coupingTechniques').doc(techniqueId);
+      .collection('coupingTechniques').doc(techniqueId);
 
     // Get the existing data of the specified technique
     const techniqueDoc = await ratingRef.get();
@@ -961,7 +1060,7 @@ async function authenticatePsychologist(req, res, next) {
   try {
     // Verify the JWT token against Firebase Authentication
     const decodedToken = await admin.auth().verifyIdToken(token);
-    
+
     // Add the user UID to the request object for further processing
     req.psychologistid = decodedToken.puid;
 
@@ -998,7 +1097,7 @@ app.post('/registerPsychologist', async (req, res) => {
     // Store additional user data in Firestore (excluding password)
     const psychologistData = {
       email,
-      password:hashedPassword
+      password: hashedPassword
     };
     await admin.firestore().collection('psychologists').doc(psychologistUid).set(psychologistData);
 
@@ -1018,7 +1117,7 @@ app.post('/registerPsychologist', async (req, res) => {
 
 app.post('/psychologistdetails', async (req, res) => {
   try {
-    const { puid, name, gender, age, languages, area_of_expertise} = req.body;
+    const { puid, name, gender, age, languages, area_of_expertise } = req.body;
     // Update user data in Firestore (add or update the nickname)
     await admin.firestore().collection('psychologists').doc(puid).set(
       {
@@ -1027,7 +1126,7 @@ app.post('/psychologistdetails', async (req, res) => {
       { merge: true } // This option ensures that existing data is not overwritten
     );
 
-    res.json({ message: 'Psychologist details saved successfully', puid:puid });
+    res.json({ message: 'Psychologist details saved successfully', puid: puid });
   } catch (error) {
     console.error('Error in psychologist details registration step:', error);
     res.status(500).json({ message: 'Internal Server Error' });
@@ -1066,7 +1165,7 @@ app.post('/registerPsychologistNickname', async (req, res) => {
       },
       { merge: true } // This option ensures that existing data is not overwritten
     );
-    res.json({ message: 'Psychologist nickname added registered successfully', puid: puid }); 
+    res.json({ message: 'Psychologist nickname added registered successfully', puid: puid });
   } catch (error) {
     console.error('Error in nickname registration step:', error);
     res.status(500).json({ message: 'Internal Server Error' });
@@ -1084,10 +1183,10 @@ app.post('/psychologistLogin', async (req, res) => {
       // Retrieve psychologist data from Firestore, assuming you have a 'psychologists' collection
       const psychologistDocRef = admin.firestore().collection('psychologists').doc(psychologistRecord.uid);
       const psychologistDoc = await psychologistDocRef.get();
-      
+
       if (psychologistDoc.exists) {
         // Check if the psychologist has a nickname
-        
+
         // Retrieve hashed password from Firestore
         const storedHashedPassword = psychologistDoc.data().password;
 
@@ -1104,25 +1203,25 @@ app.post('/psychologistLogin', async (req, res) => {
           res.header('Authorization', `Bearer ${token}`);
           res.json({
             message: 'Login successful',
-               userData: { email: psychologistRecord.email, uid: psychologistRecord.uid },
+            userData: { email: psychologistRecord.email, uid: psychologistRecord.uid },
 
           });
         } else {
-          res.status(401).json({ message: 'Invalid email or password' });
+          res.json({ message: 'Invalid email or password' });
         }
       } else {
-        res.status(404).json({ message: 'Psychologist not found in Firestore' });
+        res.json({ message: 'Psychologist not found ' });
       }
     } else {
-      res.status(404).json({ message: 'Psychologist not found' });
+      res.json({ message: 'Psychologist not found' });
     }
   } catch (error) {
     console.error('Error during login:', error);
 
     // Handle specific authentication errors
-    if (error.code === 'auth/user-not-found' )  {
+    if (error.code === 'auth/user-not-found') {
       res.status(401).json({ message: 'Invalid email' });
-    }else if(error.code === 'auth/wrong-password'){
+    } else if (error.code === 'auth/wrong-password') {
       res.status(401).json({ message: 'Invalid password' });
     } else {
       res.status(500).json({ message: 'Internal Server Error' });
@@ -1316,7 +1415,7 @@ app.post('/addAppointmentToDoctorList', async (req, res) => {
 
       await doctorAppointmentRef.update({
         uids: updatedUids,
-       
+
       });
 
       return res.json({ message: 'Appointment added to the doctor list successfully', puid: puid });
@@ -1325,7 +1424,7 @@ app.post('/addAppointmentToDoctorList', async (req, res) => {
     // If the document does not exist, create a new document with the array of UIDs
     await doctorAppointmentRef.set({
       uids: [uid],
-     
+
     });
 
     res.json({ message: 'Appointment added to the doctor list successfully', puid: puid });
@@ -1341,7 +1440,7 @@ app.post('/addAppointmentToDoctorList', async (req, res) => {
 app.post("/assignTasksToClient", async (req, res) => {
   try {
     const { uid, puid, tasks } = req.body;
-    
+
     // Check if all required parameters are provided
     if (!uid || !puid || !tasks || !Array.isArray(tasks)) {
       return res.status(400).json({ message: 'Invalid request. Missing uid, puid, or tasks parameter in the request body.' });
@@ -1360,7 +1459,7 @@ app.post("/assignTasksToClient", async (req, res) => {
       uid: uid,
       tasks: tasks,
       status: "assigned"
-    
+
     });
 
     res.json({ message: 'Tasks assigned to client successfully', taskId: taskId });
@@ -1373,7 +1472,7 @@ app.post("/assignTasksToClient", async (req, res) => {
 
 //here<<<<<<< main
 //hereapp.post('/generateAccesstoken' , async(req, res) => {
-  // For demonstration purposes, let's assume you receive user data in the request body
+// For demonstration purposes, let's assume you receive user data in the request body
 //here const user = req.body;
 //here=======
 // app.post('/generateAccesstoken' = async(req, res) => {
@@ -1415,7 +1514,7 @@ app.post("/assignTasksToClient", async (req, res) => {
 // app.post(generateRefreshtoken = (req, res) => {
 //     // For demonstration purposes, let's assume you receive user data in the request body
 //     const user = req.body;
-  
+
 //     try {
 //         const refreshToken = generateRefreshToken(user);
 //         res.status(200).json({ refreshToken: refreshToken });
@@ -1424,7 +1523,7 @@ app.post("/assignTasksToClient", async (req, res) => {
 //         res.status(500).json({ error: 'Failed to generate refresh token' });
 //     }
 //   });
-  
+
 //   // Function to generate refresh token
 //   function generateRefreshToken(user) {
 //     // Define payload for the token (can include any user-related data)
@@ -1433,19 +1532,19 @@ app.post("/assignTasksToClient", async (req, res) => {
 //         email: user.email,
 //         // You can include additional data if needed
 //     };
-  
+
 //     //Set the secret key
 //     const refreshTokenSecret = process.env.REFRESH_TOKEN_SECRET;
-  
-  
+
+
 //     // Define options (optional)
 //     const options = {
 //         expiresIn: '7d' // Token expires in 7 days
 //     };
-  
+
 //     // Generate the refresh token
 //     const refreshToken = jwt.sign(payload, refreshTokenSecret, options);
-  
+
 //     return refreshToken;
 //   }
 
@@ -1457,7 +1556,7 @@ app.post("/api/sendmessages", async (req, res) => {
     // Iterate through each UID
     for (const uid of uids) {
       // Create the conversation ID by combining PUID and UID
-      const conversationId =generateConversationId(uid,puid);
+      const conversationId = generateConversationId(uid, puid);
 
       // Get the reference to the Firestore document using the conversationId
       const conversationRef = admin.firestore().collection('chat').doc(conversationId);
@@ -1545,7 +1644,7 @@ app.post('/admin/postsStatus', async (req, res) => {
     pendingPostsSnapshot.forEach(pendingPostDoc => {
       // Get the document data along with the document ID
       const postData = pendingPostDoc.data();
-      
+
       // Add the document ID to the document data
       postData.docId = pendingPostDoc.id;
 
@@ -1553,7 +1652,7 @@ app.post('/admin/postsStatus', async (req, res) => {
       posts.push(postData);
     });
 
-    res.status(200).json({ success: true, pendingPosts:posts });
+    res.status(200).json({ success: true, pendingPosts: posts });
     // res.status(200).json({ success: true, pendingPosts });
   } catch (error) {
     console.error(error);
@@ -1636,8 +1735,8 @@ app.post('/admin/users', async (req, res) => {
     userDetailsSnapshot.forEach(doc => {
       userDetails.push(doc.data());
     });
-  
-    res.status(200).json({ success: true, users:userDetails });
+
+    res.status(200).json({ success: true, users: userDetails });
   } catch (error) {
     console.error('Error fetching user details:', error);
     res.status(500).json({ success: false, error: 'Internal server error' });
@@ -1651,8 +1750,8 @@ app.post('/admin/doctors', async (req, res) => {
     userDetailsSnapshot.forEach(doc => {
       userDetails.push(doc.data());
     });
-  
-    res.status(200).json({ success: true, users:userDetails });
+
+    res.status(200).json({ success: true, users: userDetails });
   } catch (error) {
     console.error('Error fetching user details:', error);
     res.status(500).json({ success: false, error: 'Internal server error' });
@@ -1666,11 +1765,12 @@ app.post('/admin/doctors', async (req, res) => {
 
 
 
-  
+
 
 // chat soket.io routes
 admin.firestore().settings({ ignoreUndefinedProperties: true });
 const http = require('http');
+const { log } = require('console');
 const server = http.createServer(app);
 const io = require("socket.io")(server, {
   allowRequest: (req, callback) => {
@@ -1695,18 +1795,18 @@ io.on('connection', (socket) => {
   console.log('A user connected');
 
   socket.on('join', (data) => {
-      soketconnections[data.sender]=socket.id;
+    soketconnections[data.sender] = socket.id;
     // You can also save the join event to Firestore if needed
-  
+
   });
 
   socket.on('newmessage', async (data) => {
     try {
       const conversationId = generateConversationId(data.sender, data.receiver);
-  
+
       // Reference the Firestore document for the conversation
       const conversationRef = admin.firestore().collection('chat').doc(conversationId);
-  
+
       // Check if the conversation document exists
       const conversationSnapshot = await conversationRef.get();
       const timestamp = Date.now();
@@ -1715,7 +1815,7 @@ io.on('connection', (socket) => {
         text: data.text,
         timestamp: timestamp,
       };
-  
+
       if (!conversationSnapshot.exists) {
         // If the document doesn't exist, create it with the initial message
         await conversationRef.set({
@@ -1727,12 +1827,12 @@ io.on('connection', (socket) => {
           messages: admin.firestore.FieldValue.arrayUnion(newMessage),
         });
       }
-        io.to(soketconnections[data.receiver]).emit('newmessage', newMessage);
+      io.to(soketconnections[data.receiver]).emit('newmessage', newMessage);
     } catch (error) {
       console.error('Error handling new message:', error);
     }
   });
-  
+
   socket.on('getPreviousMessages', async (data) => {
     try {
       const conversationId = generateConversationId(data.sender, data.receiver);
@@ -1749,7 +1849,7 @@ io.on('connection', (socket) => {
       console.error('Error getting previous messages:', error);
     }
   });
-  
+
 
   socket.on('disconnect', () => {
     console.log('User disconnected');
